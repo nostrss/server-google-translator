@@ -15,6 +15,7 @@ export function createSpeechSession(
       encoding: config.speech.encoding,
       sampleRateHertz: config.speech.sampleRateHertz,
       languageCode: effectiveLanguageCode,
+      enableAutomaticPunctuation: true,
     },
     interimResults: config.speech.interimResults,
   };
