@@ -2,7 +2,7 @@ import http from 'http';
 import { createWebSocketServer } from './websocket';
 import { handleLanguagesRoute } from './routes/languages';
 
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '', `http://${req.headers.host}`);
