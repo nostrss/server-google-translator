@@ -11,6 +11,7 @@ import {
   AudioChunkData,
   SpeechStartedResponseData,
   SpeechStoppedResponseData,
+  SpeechResultResponseData,
 } from './types';
 import {
   createSpeechSession,
@@ -124,7 +125,18 @@ function handleStartSpeech(
   }
 
   const languageCode = message.data?.languageCode;
-  createSpeechSession(sessionId, languageCode);
+  createSpeechSession(sessionId, languageCode, (transcript, isFinal) => {
+    const resultMessage: ServerMessage<SpeechResultResponseData> = {
+      event: ServerEvents.SPEECH_RESULT,
+      data: {
+        transcript,
+        isFinal,
+        timestamp: Date.now(),
+      },
+      success: true,
+    };
+    sendMessage(ws, resultMessage);
+  });
 
   const response: ServerMessage<SpeechStartedResponseData> = {
     event: ServerEvents.SPEECH_STARTED,

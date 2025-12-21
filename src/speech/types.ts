@@ -15,3 +15,5 @@ export interface SpeechSession {
 }
 
 export const speechSessions = new Map<string, SpeechSession>();
+
+export type SpeechResultCallback = (transcript: string, isFinal: boolean) => void;

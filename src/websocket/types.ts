@@ -24,6 +24,7 @@ export const ServerEvents = {
   ERROR: 'error',
   SPEECH_STARTED: 'speech_started',
   SPEECH_STOPPED: 'speech_stopped',
+  SPEECH_RESULT: 'speech_result',
 } as const;
 
 export interface ConnectRequestData {
@@ -51,4 +52,10 @@ export interface SpeechStartedResponseData {
 
 export interface SpeechStoppedResponseData {
   message: string;
+}
+
+export interface SpeechResultResponseData {
+  transcript: string;
+  isFinal: boolean;
+  timestamp: number;
 }

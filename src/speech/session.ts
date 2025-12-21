@@ -1,8 +1,12 @@
 import { getSpeechClient } from './client';
 import { config } from '../config';
-import { SpeechSession, speechSessions } from './types';
+import { SpeechSession, speechSessions, SpeechResultCallback } from './types';
 
-export function createSpeechSession(sessionId: string, languageCode?: string): SpeechSession {
+export function createSpeechSession(
+  sessionId: string,
+  languageCode?: string,
+  onResult?: SpeechResultCallback
+): SpeechSession {
   const client = getSpeechClient();
   const effectiveLanguageCode = languageCode || config.speech.languageCode;
 
@@ -27,6 +31,9 @@ export function createSpeechSession(sessionId: string, languageCode?: string): S
         const transcript = result.alternatives[0].transcript;
         const isFinal = result.isFinal;
         console.log(`[${sessionId}] ${isFinal ? '최종' : '중간'}: ${transcript}`);
+        if (onResult) {
+          onResult(transcript, isFinal);
+        }
       }
     })
     .on('end', () => {
