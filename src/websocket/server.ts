@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server as HTTPServer } from 'http';
 import { handleMessage } from './handlers';
+import { closeSpeechSession } from '../speech';
 
 const clients = new Map<string, WebSocket>();
 
@@ -18,6 +19,7 @@ export function createWebSocketServer(httpServer: HTTPServer): WebSocketServer {
       console.log('WebSocket 연결 종료');
       for (const [sessionId, client] of clients.entries()) {
         if (client === ws) {
+          closeSpeechSession(sessionId);
           clients.delete(sessionId);
           break;
         }

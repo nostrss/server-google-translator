@@ -7,7 +7,16 @@ import {
   ServerEvents,
   ConnectRequestData,
   ConnectedResponseData,
+  StartSpeechRequestData,
+  AudioChunkData,
+  SpeechStartedResponseData,
+  SpeechStoppedResponseData,
 } from './types';
+import {
+  createSpeechSession,
+  writeAudioToSession,
+  closeSpeechSession,
+} from '../speech';
 
 function sendMessage<T>(ws: WebSocket, message: ServerMessage<T>): void {
   if (ws.readyState === WebSocket.OPEN) {
@@ -26,6 +35,15 @@ export function handleMessage(
     switch (message.event) {
       case ClientEvents.CONNECT:
         handleConnect(ws, message as ClientMessage<ConnectRequestData>, clients);
+        break;
+      case ClientEvents.START_SPEECH:
+        handleStartSpeech(ws, message as ClientMessage<StartSpeechRequestData>, clients);
+        break;
+      case ClientEvents.AUDIO_CHUNK:
+        handleAudioChunk(ws, message as ClientMessage<AudioChunkData>, clients);
+        break;
+      case ClientEvents.STOP_SPEECH:
+        handleStopSpeech(ws, message, clients);
         break;
       default:
         sendMessage(ws, {
@@ -66,4 +84,95 @@ function handleConnect(
 
   sendMessage(ws, response);
   console.log(`클라이언트 연결 완료: ${sessionId}`);
+}
+
+function getSessionIdByWs(ws: WebSocket, clients: Map<string, WebSocket>): string | null {
+  for (const [sessionId, client] of clients.entries()) {
+    if (client === ws) {
+      return sessionId;
+    }
+  }
+  return null;
+}
+
+function stripWavHeader(buffer: Buffer): Buffer {
+  if (
+    buffer.length > 44 &&
+    buffer.slice(0, 4).toString() === 'RIFF' &&
+    buffer.slice(8, 12).toString() === 'WAVE'
+  ) {
+    return buffer.slice(44);
+  }
+  return buffer;
+}
+
+function handleStartSpeech(
+  ws: WebSocket,
+  message: ClientMessage<StartSpeechRequestData>,
+  clients: Map<string, WebSocket>
+): void {
+  const sessionId = getSessionIdByWs(ws, clients);
+
+  if (!sessionId) {
+    sendMessage(ws, {
+      event: ServerEvents.ERROR,
+      success: false,
+      error: '먼저 연결을 완료해야 합니다.',
+      requestId: message.requestId,
+    });
+    return;
+  }
+
+  createSpeechSession(sessionId);
+
+  const response: ServerMessage<SpeechStartedResponseData> = {
+    event: ServerEvents.SPEECH_STARTED,
+    data: {
+      message: '음성 인식이 시작되었습니다.',
+    },
+    requestId: message.requestId,
+    success: true,
+  };
+
+  sendMessage(ws, response);
+}
+
+function handleAudioChunk(
+  ws: WebSocket,
+  message: ClientMessage<AudioChunkData>,
+  clients: Map<string, WebSocket>
+): void {
+  const sessionId = getSessionIdByWs(ws, clients);
+
+  if (!sessionId || !message.data?.audio) {
+    return;
+  }
+
+  const audioBuffer = Buffer.from(message.data.audio, 'base64');
+  const audioData = stripWavHeader(audioBuffer);
+
+  writeAudioToSession(sessionId, audioData);
+}
+
+function handleStopSpeech(
+  ws: WebSocket,
+  message: ClientMessage,
+  clients: Map<string, WebSocket>
+): void {
+  const sessionId = getSessionIdByWs(ws, clients);
+
+  if (sessionId) {
+    closeSpeechSession(sessionId);
+  }
+
+  const response: ServerMessage<SpeechStoppedResponseData> = {
+    event: ServerEvents.SPEECH_STOPPED,
+    data: {
+      message: '음성 인식이 종료되었습니다.',
+    },
+    requestId: message.requestId,
+    success: true,
+  };
+
+  sendMessage(ws, response);
 }
