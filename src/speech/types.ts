@@ -1,19 +1,30 @@
-import { Writable } from 'stream';
+import { Duplex } from 'stream';
 
-export interface SpeechConfig {
-  encoding: 'LINEAR16' | 'MULAW' | 'FLAC';
-  sampleRateHertz: number;
-  languageCode: string;
+export interface SpeechConfigV2 {
+  languageCodes: string[];
+  model: string;
 }
 
 export interface SpeechSession {
   sessionId: string;
-  recognizeStream: Writable | null;
+  recognizeStream: Duplex | null;
   isActive: boolean;
   createdAt: number;
-  config: SpeechConfig;
+  config: SpeechConfigV2;
+  configSent: boolean;
 }
 
 export const speechSessions = new Map<string, SpeechSession>();
 
 export type SpeechResultCallback = (transcript: string, isFinal: boolean) => void;
+
+export interface StreamingRecognizeResponseV2 {
+  results?: Array<{
+    alternatives?: Array<{
+      transcript?: string;
+      confidence?: number;
+    }>;
+    isFinal?: boolean;
+  }>;
+  speechEventType?: string;
+}

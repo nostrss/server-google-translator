@@ -1,6 +1,11 @@
-import { getSpeechClient } from './client';
+import { getSpeechClient, getRecognizerPath } from './client';
 import { config } from '../config';
-import { SpeechSession, speechSessions, SpeechResultCallback } from './types';
+import {
+  SpeechSession,
+  speechSessions,
+  SpeechResultCallback,
+  StreamingRecognizeResponseV2,
+} from './types';
 
 export function createSpeechSession(
   sessionId: string,
@@ -10,30 +15,22 @@ export function createSpeechSession(
   const client = getSpeechClient();
   const effectiveLanguageCode = languageCode || config.speech.languageCode;
 
-  const request = {
-    config: {
-      encoding: config.speech.encoding,
-      sampleRateHertz: config.speech.sampleRateHertz,
-      languageCode: effectiveLanguageCode,
-      enableAutomaticPunctuation: true,
-    },
-    interimResults: config.speech.interimResults,
-  };
-
   const recognizeStream = client
-    .streamingRecognize(request)
-    .on('error', (error) => {
+    ._streamingRecognize()
+    .on('error', (error: Error) => {
       console.error(`STT 에러 [${sessionId}]:`, error.message);
       closeSpeechSession(sessionId);
     })
-    .on('data', (data) => {
-      const result = data.results[0];
-      if (result?.alternatives[0]) {
-        const transcript = result.alternatives[0].transcript;
-        const isFinal = result.isFinal;
-        console.log(`[${sessionId}] ${isFinal ? '최종' : '중간'}: ${transcript}`);
-        if (onResult) {
-          onResult(transcript, isFinal);
+    .on('data', (data: StreamingRecognizeResponseV2) => {
+      if (data.results && data.results.length > 0) {
+        const result = data.results[0];
+        if (result?.alternatives?.[0]?.transcript) {
+          const transcript = result.alternatives[0].transcript;
+          const isFinal = result.isFinal ?? false;
+          console.log(`[${sessionId}] ${isFinal ? '최종' : '중간'}: ${transcript}`);
+          if (onResult) {
+            onResult(transcript, isFinal);
+          }
         }
       }
     })
@@ -47,14 +44,14 @@ export function createSpeechSession(
     isActive: true,
     createdAt: Date.now(),
     config: {
-      encoding: config.speech.encoding,
-      sampleRateHertz: config.speech.sampleRateHertz,
-      languageCode: effectiveLanguageCode,
+      languageCodes: [effectiveLanguageCode],
+      model: config.speech.model,
     },
+    configSent: false,
   };
 
   speechSessions.set(sessionId, session);
-  console.log(`STT 세션 생성: ${sessionId}`);
+  console.log(`STT 세션 생성: ${sessionId} (Chirp 3 모델)`);
 
   return session;
 }
@@ -68,7 +65,33 @@ export function writeAudioToSession(sessionId: string, audioData: Buffer): boole
   }
 
   try {
-    session.recognizeStream.write(audioData);
+    if (!session.configSent) {
+      const configRequest = {
+        recognizer: getRecognizerPath(),
+        streamingConfig: {
+          config: {
+            explicitDecodingConfig: {
+              encoding: 'LINEAR16',
+              sampleRateHertz: 16000,
+              audioChannelCount: 1,
+            },
+            languageCodes: session.config.languageCodes,
+            model: session.config.model,
+            features: {
+              enableAutomaticPunctuation: true,
+            },
+          },
+          streamingFeatures: {
+            interimResults: config.speech.interimResults,
+          },
+        },
+      };
+      session.recognizeStream.write(configRequest);
+      session.configSent = true;
+      console.log(`[${sessionId}] V2 Config 전송 완료`);
+    }
+
+    session.recognizeStream.write({ audio: audioData });
     return true;
   } catch (error) {
     console.error(`오디오 쓰기 실패 [${sessionId}]:`, error);

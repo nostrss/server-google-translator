@@ -9,10 +9,10 @@ export const config = {
     },
   },
   speech: {
-    encoding: 'LINEAR16' as const,
-    sampleRateHertz: 16000,
     languageCode: 'ko-KR',
     interimResults: true,
+    model: 'chirp_3',
+    region: process.env.SPEECH_REGION || 'us',
   },
   translation: {
     location: process.env.TRANSLATION_LOCATION || 'global',
