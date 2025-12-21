@@ -12,12 +12,14 @@ import {
   SpeechStartedResponseData,
   SpeechStoppedResponseData,
   SpeechResultResponseData,
+  TranslationResultResponseData,
 } from './types';
 import {
   createSpeechSession,
   writeAudioToSession,
   closeSpeechSession,
 } from '../speech';
+import { translateText, TranslationModel } from '../translate';
 
 function sendMessage<T>(ws: WebSocket, message: ServerMessage<T>): void {
   if (ws.readyState === WebSocket.OPEN) {
@@ -107,6 +109,11 @@ function stripWavHeader(buffer: Buffer): Buffer {
   return buffer;
 }
 
+function extractLangCode(languageCode?: string): string {
+  if (!languageCode) return 'ko';
+  return languageCode.split('-')[0];
+}
+
 function handleStartSpeech(
   ws: WebSocket,
   message: ClientMessage<StartSpeechRequestData>,
@@ -125,7 +132,10 @@ function handleStartSpeech(
   }
 
   const languageCode = message.data?.languageCode;
-  createSpeechSession(sessionId, languageCode, (transcript, isFinal) => {
+  const targetLanguageCode = message.data?.targetLanguageCode;
+  const sourceLanguageCode = extractLangCode(languageCode);
+
+  createSpeechSession(sessionId, languageCode, async (transcript, isFinal) => {
     const resultMessage: ServerMessage<SpeechResultResponseData> = {
       event: ServerEvents.SPEECH_RESULT,
       data: {
@@ -136,6 +146,38 @@ function handleStartSpeech(
       success: true,
     };
     sendMessage(ws, resultMessage);
+
+    if (targetLanguageCode && transcript.trim()) {
+      try {
+        const model: TranslationModel = isFinal ? 'llm' : 'nmt';
+        const result = await translateText(
+          transcript,
+          sourceLanguageCode,
+          targetLanguageCode,
+          model
+        );
+
+        const translationMessage: ServerMessage<TranslationResultResponseData> = {
+          event: ServerEvents.TRANSLATION_RESULT,
+          data: {
+            originalText: result.originalText,
+            translatedText: result.translatedText,
+            isFinal: result.isFinal,
+            model: result.model,
+            timestamp: result.timestamp,
+          },
+          success: true,
+        };
+        sendMessage(ws, translationMessage);
+      } catch (error) {
+        console.error(`번역 실패 [${sessionId}]:`, error);
+        sendMessage(ws, {
+          event: ServerEvents.ERROR,
+          success: false,
+          error: `번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+        });
+      }
+    }
   });
 
   const response: ServerMessage<SpeechStartedResponseData> = {

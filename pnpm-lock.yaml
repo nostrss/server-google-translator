@@ -11,6 +11,9 @@ importers:
       '@google-cloud/speech':
         specifier: ^7.2.1
         version: 7.2.1
+      '@google-cloud/translate':
+        specifier: ^9.3.0
+        version: 9.3.0
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -49,8 +52,16 @@ packages:
     resolution: {integrity: sha512-G/FQx5cE/+DqBbOpA5jKsegGwdPniU6PuIEMt+qxWgFxvxuFOzVmp6zYchtYuwAWV5/8Dgs0yAmjvNZv3uXLQg==}
     engines: {node: '>=18'}
 
+  '@google-cloud/promisify@5.0.0':
+    resolution: {integrity: sha512-N8qS6dlORGHwk7WjGXKOSsLjIjNINCPicsOX6gyyLiYk7mq3MtII96NZ9N2ahwA2vnkLmZODOIH9rlNniYWvCQ==}
+    engines: {node: '>=18'}
+
   '@google-cloud/speech@7.2.1':
     resolution: {integrity: sha512-3eaX4/aT5cJ0JMAiMwg1RLJJD2fxbF3St9x+9QSQskHJGFuMM2RCUmadLjCK3gPsdVk2eVdStiyxxuw+zeIEbw==}
+    engines: {node: '>=18'}
+
+  '@google-cloud/translate@9.3.0':
+    resolution: {integrity: sha512-OgZ2bCu3P0ZzMhEdYubwyCo/eFFlJMYalozmgOxlVcD51vCYelYUJeVnGlS+3cFQTJQX4RE84bYTKu7W0wqByw==}
     engines: {node: '>=18'}
 
   '@grpc/grpc-js@1.14.3':
@@ -307,6 +318,10 @@ packages:
   html-entities@2.6.0:
     resolution: {integrity: sha512-kig+rMn/QOVRvr7c86gQ8lWXq+Hkv6CbAH1hLu+RG338StTpE8Z0b44SDVaqVu7HGKf27frdmUYEs9hTUX/cLQ==}
 
+  html-tags@3.3.1:
+    resolution: {integrity: sha512-ztqyC3kLto0e9WbNp0aeP+M3kTt+nbaIveGmUxAtZa+8iFgKLUOD4YKM5j+f3QD89bra7UeumolZHKuOXnTmeQ==}
+    engines: {node: '>=8'}
+
   http-proxy-agent@5.0.0:
     resolution: {integrity: sha512-n2hY8YdoRE1i7r6M0w9DIw5GgZN0G25P8zLCRQ8rjXtTU3vsNFBI/vWK/UIeE6g5MUUz6avwAPXmL6Fy9D/90w==}
     engines: {node: '>= 6'}
@@ -324,6 +339,10 @@ packages:
 
   is-fullwidth-code-point@3.0.0:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
+    engines: {node: '>=8'}
+
+  is-html@2.0.0:
+    resolution: {integrity: sha512-S+OpgB5i7wzIue/YSE5hg0e5ZYfG3hhpNh9KGl6ayJ38p7ED6wxQLd1TV91xHpcTvw90KMJ9EwN3F/iNflHBVg==}
     engines: {node: '>=8'}
 
   isexe@2.0.0:
@@ -572,6 +591,8 @@ snapshots:
 
   '@google-cloud/promisify@4.1.0': {}
 
+  '@google-cloud/promisify@5.0.0': {}
+
   '@google-cloud/speech@7.2.1':
     dependencies:
       '@google-cloud/common': 6.0.0
@@ -580,6 +601,17 @@ snapshots:
       pumpify: 2.0.1
       stream-events: 1.0.5
       uuid: 11.1.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@google-cloud/translate@9.3.0':
+    dependencies:
+      '@google-cloud/common': 6.0.0
+      '@google-cloud/promisify': 5.0.0
+      arrify: 2.0.1
+      extend: 3.0.2
+      google-gax: 5.0.6
+      is-html: 2.0.0
     transitivePeerDependencies:
       - supports-color
 
@@ -844,6 +876,8 @@ snapshots:
 
   html-entities@2.6.0: {}
 
+  html-tags@3.3.1: {}
+
   http-proxy-agent@5.0.0:
     dependencies:
       '@tootallnate/once': 2.0.0
@@ -869,6 +903,10 @@ snapshots:
   inherits@2.0.4: {}
 
   is-fullwidth-code-point@3.0.0: {}
+
+  is-html@2.0.0:
+    dependencies:
+      html-tags: 3.3.1
 
   isexe@2.0.0: {}
 

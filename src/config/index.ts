@@ -14,6 +14,10 @@ export const config = {
     languageCode: 'ko-KR',
     interimResults: true,
   },
+  translation: {
+    location: process.env.TRANSLATION_LOCATION || 'global',
+    defaultTargetLanguage: process.env.TRANSLATION_DEFAULT_TARGET_LANG || 'en',
+  },
   server: {
     port: parseInt(process.env.PORT || '3000', 10),
   },

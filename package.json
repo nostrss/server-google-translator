@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
+    "@google-cloud/translate": "^9.3.0",
     "dotenv": "^17.2.3",
     "ws": "^8.18.3"
   }

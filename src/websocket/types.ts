@@ -25,6 +25,7 @@ export const ServerEvents = {
   SPEECH_STARTED: 'speech_started',
   SPEECH_STOPPED: 'speech_stopped',
   SPEECH_RESULT: 'speech_result',
+  TRANSLATION_RESULT: 'translation_result',
 } as const;
 
 export interface ConnectRequestData {
@@ -40,6 +41,7 @@ export interface ConnectedResponseData {
 export interface StartSpeechRequestData {
   sampleRateHertz?: number;
   languageCode?: string;
+  targetLanguageCode?: string;
 }
 
 export interface AudioChunkData {
@@ -57,5 +59,13 @@ export interface SpeechStoppedResponseData {
 export interface SpeechResultResponseData {
   transcript: string;
   isFinal: boolean;
+  timestamp: number;
+}
+
+export interface TranslationResultResponseData {
+  originalText: string;
+  translatedText: string;
+  isFinal: boolean;
+  model: 'nmt' | 'llm';
   timestamp: number;
 }
