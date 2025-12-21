@@ -10,7 +10,8 @@ export async function translateText(
 ): Promise<TranslationResult> {
   const client = getTranslationClient();
   const projectId = config.google.projectId;
-  const location = config.translation.location;
+  // LLM 모델은 us-central1에서만 지원됨 (global 사용 시 INVALID_ARGUMENT 에러 발생)
+  const location = model === 'llm' ? 'us-central1' : config.translation.location;
 
   const request: {
     parent: string;

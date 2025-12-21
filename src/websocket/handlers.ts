@@ -132,8 +132,10 @@ function handleStartSpeech(
   }
 
   const languageCode = message.data?.languageCode;
-  const targetLanguageCode = message.data?.targetLanguageCode;
   const sourceLanguageCode = extractLangCode(languageCode);
+  const targetLanguageCode = message.data?.targetLanguageCode
+    ? extractLangCode(message.data.targetLanguageCode)
+    : undefined;
 
   createSpeechSession(sessionId, languageCode, async (transcript, isFinal) => {
     const resultMessage: ServerMessage<SpeechResultResponseData> = {
