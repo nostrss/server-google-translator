@@ -2,14 +2,15 @@ import { getSpeechClient } from './client';
 import { config } from '../config';
 import { SpeechSession, speechSessions } from './types';
 
-export function createSpeechSession(sessionId: string): SpeechSession {
+export function createSpeechSession(sessionId: string, languageCode?: string): SpeechSession {
   const client = getSpeechClient();
+  const effectiveLanguageCode = languageCode || config.speech.languageCode;
 
   const request = {
     config: {
       encoding: config.speech.encoding,
       sampleRateHertz: config.speech.sampleRateHertz,
-      languageCode: config.speech.languageCode,
+      languageCode: effectiveLanguageCode,
     },
     interimResults: config.speech.interimResults,
   };
@@ -40,7 +41,7 @@ export function createSpeechSession(sessionId: string): SpeechSession {
     config: {
       encoding: config.speech.encoding,
       sampleRateHertz: config.speech.sampleRateHertz,
-      languageCode: config.speech.languageCode,
+      languageCode: effectiveLanguageCode,
     },
   };
 

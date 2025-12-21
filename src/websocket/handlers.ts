@@ -123,7 +123,8 @@ function handleStartSpeech(
     return;
   }
 
-  createSpeechSession(sessionId);
+  const languageCode = message.data?.languageCode;
+  createSpeechSession(sessionId, languageCode);
 
   const response: ServerMessage<SpeechStartedResponseData> = {
     event: ServerEvents.SPEECH_STARTED,
