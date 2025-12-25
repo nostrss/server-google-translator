@@ -149,12 +149,14 @@ function handleStartSpeech(
       if (targetLanguageCode && transcript.trim()) {
         try {
           const model: TranslationModel = isFinal ? 'llm' : 'nmt';
+          console.log(`[${sessionId}] 번역 요청: "${transcript}" (${sourceLanguageCode} → ${targetLanguageCode}, 모델: ${model})`);
           const result = await translateText(
             transcript,
             sourceLanguageCode,
             targetLanguageCode,
             model
           );
+          console.log(`[${sessionId}] 번역 완료: "${result.translatedText}"`);
 
           const chatId = getGoogleChatId(sessionId);
           const translationMessage: ServerMessage<TranslationResultResponseData> = {
