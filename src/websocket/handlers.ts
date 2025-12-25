@@ -130,57 +130,70 @@ function handleStartSpeech(
     ? extractLangCode(message.data.targetLanguageCode)
     : undefined;
 
-  createSpeechSession(sessionId, languageCode, async (transcript, isFinal) => {
-    const resultMessage: ServerMessage<SpeechResultResponseData> = {
-      event: ServerEvents.SPEECH_RESULT,
-      data: {
-        transcript,
-        isFinal,
-        timestamp: Date.now(),
-      },
-      success: true,
-    };
-    sendMessage(ws, resultMessage);
-
-    if (targetLanguageCode && transcript.trim()) {
-      try {
-        const model: TranslationModel = isFinal ? 'llm' : 'nmt';
-        const result = await translateText(
+  createSpeechSession(
+    sessionId,
+    languageCode,
+    // onResult 콜백
+    async (transcript, isFinal) => {
+      const resultMessage: ServerMessage<SpeechResultResponseData> = {
+        event: ServerEvents.SPEECH_RESULT,
+        data: {
           transcript,
-          sourceLanguageCode,
-          targetLanguageCode,
-          model
-        );
+          isFinal,
+          timestamp: Date.now(),
+        },
+        success: true,
+      };
+      sendMessage(ws, resultMessage);
 
-        const chatId = getGoogleChatId(sessionId);
-        const translationMessage: ServerMessage<TranslationResultResponseData> = {
-          event: ServerEvents.TRANSLATION_RESULT,
-          data: {
-            chatId,
-            originalText: result.originalText,
-            translatedText: result.translatedText,
-            isFinal: result.isFinal,
-            model: result.model,
-            timestamp: result.timestamp,
-          },
-          success: true,
-        };
-        sendMessage(ws, translationMessage);
+      if (targetLanguageCode && transcript.trim()) {
+        try {
+          const model: TranslationModel = isFinal ? 'llm' : 'nmt';
+          const result = await translateText(
+            transcript,
+            sourceLanguageCode,
+            targetLanguageCode,
+            model
+          );
 
-        // isFinal이면 다음 발화를 위해 chatId 갱신
-        if (isFinal) {
-          renewGoogleChatId(sessionId);
+          const chatId = getGoogleChatId(sessionId);
+          const translationMessage: ServerMessage<TranslationResultResponseData> = {
+            event: ServerEvents.TRANSLATION_RESULT,
+            data: {
+              chatId,
+              originalText: result.originalText,
+              translatedText: result.translatedText,
+              isFinal: result.isFinal,
+              model: result.model,
+              timestamp: result.timestamp,
+            },
+            success: true,
+          };
+          sendMessage(ws, translationMessage);
+
+          // isFinal이면 다음 발화를 위해 chatId 갱신
+          if (isFinal) {
+            renewGoogleChatId(sessionId);
+          }
+        } catch (error) {
+          console.error(`번역 실패 [${sessionId}]:`, error);
+          sendMessage(ws, {
+            event: ServerEvents.ERROR,
+            success: false,
+            error: `번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+          });
         }
-      } catch (error) {
-        console.error(`번역 실패 [${sessionId}]:`, error);
-        sendMessage(ws, {
-          event: ServerEvents.ERROR,
-          success: false,
-          error: `번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
-        });
       }
+    },
+    // onError 콜백
+    (errorMessage) => {
+      sendMessage(ws, {
+        event: ServerEvents.ERROR,
+        success: false,
+        error: `STT 에러: ${errorMessage}`,
+      });
     }
-  });
+  );
 
   const response: ServerMessage<SpeechStartedResponseData> = {
     event: ServerEvents.SPEECH_STARTED,
