@@ -1,5 +1,23 @@
 import { WebSocket } from 'ws';
 import crypto from 'crypto';
+
+// Google STT용 세션별 chatId 저장소
+const googleChatIds = new Map<string, string>();
+
+function getGoogleChatId(sessionId: string): string {
+  if (!googleChatIds.has(sessionId)) {
+    googleChatIds.set(sessionId, crypto.randomUUID());
+  }
+  return googleChatIds.get(sessionId)!;
+}
+
+function renewGoogleChatId(sessionId: string): void {
+  googleChatIds.set(sessionId, crypto.randomUUID());
+}
+
+function deleteGoogleChatId(sessionId: string): void {
+  googleChatIds.delete(sessionId);
+}
 import {
   ClientMessage,
   ServerMessage,
@@ -15,17 +33,17 @@ import {
   TranslationResultResponseData,
 } from './types';
 import {
+  sendMessage,
+  getSessionIdByWs,
+  stripWavHeader,
+  extractLangCode,
+} from './utils';
+import {
   createSpeechSession,
   writeAudioToSession,
   closeSpeechSession,
 } from '../speech';
 import { translateText, TranslationModel } from '../translate';
-
-function sendMessage<T>(ws: WebSocket, message: ServerMessage<T>): void {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
-  }
-}
 
 export function handleMessage(
   ws: WebSocket,
@@ -89,31 +107,6 @@ function handleConnect(
   console.log(`클라이언트 연결 완료: ${sessionId}`);
 }
 
-function getSessionIdByWs(ws: WebSocket, clients: Map<string, WebSocket>): string | null {
-  for (const [sessionId, client] of clients.entries()) {
-    if (client === ws) {
-      return sessionId;
-    }
-  }
-  return null;
-}
-
-function stripWavHeader(buffer: Buffer): Buffer {
-  if (
-    buffer.length > 44 &&
-    buffer.slice(0, 4).toString() === 'RIFF' &&
-    buffer.slice(8, 12).toString() === 'WAVE'
-  ) {
-    return buffer.slice(44);
-  }
-  return buffer;
-}
-
-function extractLangCode(languageCode?: string): string {
-  if (!languageCode) return 'ko';
-  return languageCode.split('-')[0];
-}
-
 function handleStartSpeech(
   ws: WebSocket,
   message: ClientMessage<StartSpeechRequestData>,
@@ -159,9 +152,11 @@ function handleStartSpeech(
           model
         );
 
+        const chatId = getGoogleChatId(sessionId);
         const translationMessage: ServerMessage<TranslationResultResponseData> = {
           event: ServerEvents.TRANSLATION_RESULT,
           data: {
+            chatId,
             originalText: result.originalText,
             translatedText: result.translatedText,
             isFinal: result.isFinal,
@@ -171,6 +166,11 @@ function handleStartSpeech(
           success: true,
         };
         sendMessage(ws, translationMessage);
+
+        // isFinal이면 다음 발화를 위해 chatId 갱신
+        if (isFinal) {
+          renewGoogleChatId(sessionId);
+        }
       } catch (error) {
         console.error(`번역 실패 [${sessionId}]:`, error);
         sendMessage(ws, {
@@ -220,6 +220,7 @@ function handleStopSpeech(
 
   if (sessionId) {
     closeSpeechSession(sessionId);
+    deleteGoogleChatId(sessionId);
   }
 
   const response: ServerMessage<SpeechStoppedResponseData> = {

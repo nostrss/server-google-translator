@@ -1,5 +1,5 @@
 import http from 'http';
-import { createWebSocketServer } from './websocket';
+import { createGoogleWebSocketServer, createSonioxWebSocketServer } from './websocket';
 import { handleLanguagesRoute } from './routes/languages';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -34,9 +34,25 @@ const server = http.createServer((req, res) => {
   }
 });
 
-createWebSocketServer(server);
+const googleWss = createGoogleWebSocketServer();
+const sonioxWss = createSonioxWebSocketServer();
+
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
+
+  if (pathname === '/soniox') {
+    sonioxWss.handleUpgrade(request, socket, head, (ws) => {
+      sonioxWss.emit('connection', ws, request);
+    });
+  } else {
+    googleWss.handleUpgrade(request, socket, head, (ws) => {
+      googleWss.emit('connection', ws, request);
+    });
+  }
+});
 
 server.listen(PORT, () => {
   console.log(`HTTP 서버: http://localhost:${PORT}/`);
-  console.log(`WebSocket 서버: ws://localhost:${PORT}/`);
+  console.log(`WebSocket 서버 (Google): ws://localhost:${PORT}/`);
+  console.log(`WebSocket 서버 (Soniox): ws://localhost:${PORT}/soniox`);
 });

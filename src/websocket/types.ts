@@ -63,6 +63,7 @@ export interface SpeechResultResponseData {
 }
 
 export interface TranslationResultResponseData {
+  chatId: string;
   originalText: string;
   translatedText: string;
   isFinal: boolean;
