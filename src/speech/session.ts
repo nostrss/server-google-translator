@@ -7,6 +7,7 @@ import {
   speechSessions,
   SpeechResultCallback,
   SpeechErrorCallback,
+  TranslationRequestCallback,
   StreamingRecognizeResponseV2,
   STREAM_RESTART_CONSTANTS,
 } from './types';
@@ -31,11 +32,22 @@ function scheduleStreamRestart(sessionId: string): void {
 /**
  * 스트림 재시작 실행
  */
-function initiateStreamRestart(sessionId: string): void {
+async function initiateStreamRestart(sessionId: string): Promise<void> {
   const session = speechSessions.get(sessionId);
   if (!session || !session.isActive) return;
 
   console.log(`[${sessionId}] 스트림 재시작 시작 (4분 30초 경과)`);
+
+  // 재시작 전에 축적된 텍스트를 isFinal=true로 번역 요청
+  const pendingText = session.currentTranscript.trim();
+  if (pendingText && session.onTranslationRequest) {
+    console.log(`[${sessionId}] 재시작 전 축적된 텍스트 번역 요청: "${pendingText}"`);
+    session.currentTranscript = '';
+    // 번역 요청 (비동기로 진행, 재시작을 블로킹하지 않음)
+    session.onTranslationRequest(pendingText, true).catch((error) => {
+      console.error(`[${sessionId}] 재시작 전 번역 요청 실패:`, error);
+    });
+  }
   session.isTransitioning = true;
 
   const client = getSpeechClient();
@@ -125,6 +137,14 @@ function handleStreamData(
       const transcript = result.alternatives[0].transcript;
       const isFinal = result.isFinal ?? false;
       console.log(`[${sessionId}] ${isFinal ? '최종' : '중간'}: ${transcript}`);
+
+      // 텍스트 축적: interim은 저장, final은 초기화
+      if (isFinal) {
+        session.currentTranscript = '';
+      } else {
+        session.currentTranscript = transcript;
+      }
+
       if (onResult) {
         onResult(transcript, isFinal);
       }
@@ -198,7 +218,10 @@ export function createSpeechSession(
   sessionId: string,
   languageCode?: string,
   onResult?: SpeechResultCallback,
-  onError?: SpeechErrorCallback
+  onError?: SpeechErrorCallback,
+  sourceLanguageCode?: string,
+  targetLanguageCode?: string,
+  onTranslationRequest?: TranslationRequestCallback
 ): SpeechSession {
   const client = getSpeechClient();
   const effectiveLanguageCode = languageCode || config.speech.languageCode;
@@ -227,8 +250,12 @@ export function createSpeechSession(
     audioBuffer,
     onResult,
     onError,
+    onTranslationRequest,
     isTransitioning: false,
     streamGeneration: 0,
+    currentTranscript: '',
+    sourceLanguageCode: sourceLanguageCode || effectiveLanguageCode,
+    targetLanguageCode,
   };
 
   speechSessions.set(sessionId, session);
@@ -284,6 +311,28 @@ export function writeAudioToSession(sessionId: string, audioData: Buffer): boole
   } catch (error) {
     console.error(`오디오 쓰기 실패 [${sessionId}]:`, error);
     return false;
+  }
+}
+
+/**
+ * 축적된 interim 텍스트를 isFinal=true로 번역 요청
+ */
+export async function flushPendingTranscript(sessionId: string): Promise<void> {
+  const session = speechSessions.get(sessionId);
+
+  if (!session) return;
+
+  const pendingText = session.currentTranscript.trim();
+  if (!pendingText) return;
+
+  console.log(`[${sessionId}] 축적된 텍스트 플러시: "${pendingText}"`);
+
+  // 축적된 텍스트 초기화
+  session.currentTranscript = '';
+
+  // onTranslationRequest 콜백이 있으면 isFinal=true로 번역 요청
+  if (session.onTranslationRequest) {
+    await session.onTranslationRequest(pendingText, true);
   }
 }
 

@@ -1,5 +1,5 @@
 export { getSpeechClient, getRecognizerPath } from './client';
-export { createSpeechSession, writeAudioToSession, closeSpeechSession } from './session';
+export { createSpeechSession, writeAudioToSession, closeSpeechSession, flushPendingTranscript } from './session';
 export { CircularBuffer } from './circular-buffer';
 export {
   SpeechSession,

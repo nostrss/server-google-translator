@@ -39,10 +39,18 @@ export interface SpeechSession {
   onResult?: SpeechResultCallback
   /** 에러 콜백 (클라이언트 알림용) */
   onError?: SpeechErrorCallback
+  /** 번역 요청 콜백 */
+  onTranslationRequest?: TranslationRequestCallback
   /** 스트림 전환 중 플래그 */
   isTransitioning: boolean
   /** 스트림 세대 번호 (중복 결과 방지) */
   streamGeneration: number
+  /** 현재 축적된 interim 텍스트 */
+  currentTranscript: string
+  /** STT 소스 언어 코드 */
+  sourceLanguageCode: string
+  /** 번역 대상 언어 코드 */
+  targetLanguageCode?: string
 }
 
 export const speechSessions = new Map<string, SpeechSession>()
@@ -52,6 +60,10 @@ export type SpeechResultCallback = (
   isFinal: boolean
 ) => void
 export type SpeechErrorCallback = (error: string) => void
+export type TranslationRequestCallback = (
+  transcript: string,
+  isFinal: boolean
+) => Promise<void>
 
 export interface StreamingRecognizeResponseV2 {
   results?: Array<{
