@@ -225,11 +225,17 @@ function handleStartSpeech(
       };
       sendMessage(ws, voiceActivityMessage);
 
-      // timeout 시 세션 정리
+      // timeout 시 세션 정리 및 WebSocket 연결 종료
       if (eventType === 'timeout') {
         await flushPendingTranscript(sessionId);
         closeSpeechSession(sessionId);
         deleteGoogleChatId(sessionId);
+
+        // clients Map에서 삭제
+        clients.delete(sessionId);
+
+        // WebSocket 연결 종료
+        ws.close();
       }
     }
   );
