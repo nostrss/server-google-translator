@@ -31,6 +31,7 @@ import {
   SpeechStoppedResponseData,
   SpeechResultResponseData,
   TranslationResultResponseData,
+  VoiceActivityResponseData,
 } from './types';
 import {
   sendMessage,
@@ -204,7 +205,33 @@ function handleStartSpeech(
     // 새 파라미터: sourceLanguageCode, targetLanguageCode, onTranslationRequest
     sourceLanguageCode,
     targetLanguageCode,
-    requestTranslation
+    requestTranslation,
+    // onVoiceActivity 콜백
+    async (eventType) => {
+      const messages = {
+        begin: '음성이 감지되었습니다.',
+        end: '음성이 종료되었습니다.',
+        timeout: '음성 활동 시간 초과로 스트림이 종료되었습니다.',
+      };
+
+      const voiceActivityMessage: ServerMessage<VoiceActivityResponseData> = {
+        event: ServerEvents.VOICE_ACTIVITY,
+        data: {
+          type: eventType,
+          message: messages[eventType],
+          timestamp: Date.now(),
+        },
+        success: true,
+      };
+      sendMessage(ws, voiceActivityMessage);
+
+      // timeout 시 세션 정리
+      if (eventType === 'timeout') {
+        await flushPendingTranscript(sessionId);
+        closeSpeechSession(sessionId);
+        deleteGoogleChatId(sessionId);
+      }
+    }
   );
 
   const response: ServerMessage<SpeechStartedResponseData> = {

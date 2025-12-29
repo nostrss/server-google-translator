@@ -41,6 +41,8 @@ export interface SpeechSession {
   onError?: SpeechErrorCallback
   /** 번역 요청 콜백 */
   onTranslationRequest?: TranslationRequestCallback
+  /** Voice Activity 이벤트 콜백 */
+  onVoiceActivity?: VoiceActivityCallback
   /** 스트림 전환 중 플래그 */
   isTransitioning: boolean
   /** 스트림 세대 번호 (중복 결과 방지) */
@@ -64,6 +66,7 @@ export type TranslationRequestCallback = (
   transcript: string,
   isFinal: boolean
 ) => Promise<void>
+export type VoiceActivityCallback = (eventType: 'begin' | 'end' | 'timeout') => void
 
 export interface StreamingRecognizeResponseV2 {
   results?: Array<{

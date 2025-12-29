@@ -26,6 +26,7 @@ export const ServerEvents = {
   SPEECH_STOPPED: 'speech_stopped',
   SPEECH_RESULT: 'speech_result',
   TRANSLATION_RESULT: 'translation_result',
+  VOICE_ACTIVITY: 'voice_activity',
 } as const;
 
 export interface ConnectRequestData {
@@ -68,5 +69,11 @@ export interface TranslationResultResponseData {
   translatedText: string;
   isFinal: boolean;
   model: 'nmt' | 'llm';
+  timestamp: number;
+}
+
+export interface VoiceActivityResponseData {
+  type: 'begin' | 'end' | 'timeout';
+  message: string;
   timestamp: number;
 }

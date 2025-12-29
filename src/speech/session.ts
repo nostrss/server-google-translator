@@ -8,6 +8,7 @@ import {
   SpeechResultCallback,
   SpeechErrorCallback,
   TranslationRequestCallback,
+  VoiceActivityCallback,
   StreamingRecognizeResponseV2,
   STREAM_RESTART_CONSTANTS,
 } from './types';
@@ -79,6 +80,11 @@ async function initiateStreamRestart(sessionId: string): Promise<void> {
       },
       streamingFeatures: {
         interimResults: config.speech.interimResults,
+        enableVoiceActivityEvents: true,
+        voiceActivityTimeout: {
+          speechStartTimeout: { seconds: 30 },
+          speechEndTimeout: { seconds: 30 },
+        },
       },
     },
   };
@@ -129,6 +135,22 @@ function handleStreamData(
   // 이전 세대 스트림의 결과는 무시 (전환 중 중복 방지)
   if (generation < session.streamGeneration) {
     return;
+  }
+
+  // Voice Activity 이벤트 처리
+  if (data.speechEventType) {
+    console.log(`[${sessionId}] Voice Activity 이벤트: ${data.speechEventType}`);
+
+    if (data.speechEventType === 'SPEECH_ACTIVITY_BEGIN') {
+      session.onVoiceActivity?.('begin');
+    } else if (data.speechEventType === 'SPEECH_ACTIVITY_END') {
+      session.onVoiceActivity?.('end');
+    } else if (
+      data.speechEventType === 'SPEECH_ACTIVITY_TIMEOUT' ||
+      data.speechEventType === 'END_OF_SINGLE_UTTERANCE'
+    ) {
+      session.onVoiceActivity?.('timeout');
+    }
   }
 
   if (data.results && data.results.length > 0) {
@@ -211,6 +233,18 @@ function createRecognizeStream(
     })
     .on('end', () => {
       console.log(`STT 스트림 종료 [${sessionId}][gen:${generation}]`);
+
+      const session = speechSessions.get(sessionId);
+      if (!session) return;
+
+      // 이전 세대 스트림의 종료는 무시
+      if (generation < session.streamGeneration) return;
+
+      // 전환 중이 아니고 세션이 활성 상태면 VAD timeout으로 간주
+      if (!session.isTransitioning && session.isActive) {
+        console.log(`[${sessionId}] VAD timeout으로 스트림 종료됨`);
+        session.onVoiceActivity?.('timeout');
+      }
     });
 }
 
@@ -221,7 +255,8 @@ export function createSpeechSession(
   onError?: SpeechErrorCallback,
   sourceLanguageCode?: string,
   targetLanguageCode?: string,
-  onTranslationRequest?: TranslationRequestCallback
+  onTranslationRequest?: TranslationRequestCallback,
+  onVoiceActivity?: VoiceActivityCallback
 ): SpeechSession {
   const client = getSpeechClient();
   const effectiveLanguageCode = languageCode || config.speech.languageCode;
@@ -251,6 +286,7 @@ export function createSpeechSession(
     onResult,
     onError,
     onTranslationRequest,
+    onVoiceActivity,
     isTransitioning: false,
     streamGeneration: 0,
     currentTranscript: '',
@@ -298,12 +334,17 @@ export function writeAudioToSession(sessionId: string, audioData: Buffer): boole
           },
           streamingFeatures: {
             interimResults: config.speech.interimResults,
+            enableVoiceActivityEvents: true,
+            voiceActivityTimeout: {
+              speechStartTimeout: { seconds: 30 },
+              speechEndTimeout: { seconds: 30 },
+            },
           },
         },
       };
       session.recognizeStream.write(configRequest);
       session.configSent = true;
-      console.log(`[${sessionId}] V2 Config 전송 완료`);
+      console.log(`[${sessionId}] V2 Config 전송 완료 (VAD timeout: 30초)`);
     }
 
     session.recognizeStream.write({ audio: audioData });
