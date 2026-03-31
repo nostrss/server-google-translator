@@ -21,6 +21,7 @@ export class TranslateService {
     targetLanguageCode: string,
     mode: TranslationMode,
   ): Promise<TranslationResult> {
+    this.logger.log(`[번역 요청] mode=${mode}, src=${sourceLanguageCode}, tgt=${targetLanguageCode}, text="${text.substring(0, 50)}..."`);
     if (mode === 'advanced') {
       return this.enqueueAdaptive(() =>
         this.translateAdvanced(text, sourceLanguageCode, targetLanguageCode),

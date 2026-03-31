@@ -107,6 +107,7 @@ export class SonioxService {
       const finalTranscript = state.accumulatedOriginal.trim();
       const segmentId = getSegmentId();
       const detectedLanguage = state.detectedLanguage;
+      this.logger.log(`[endpoint] segmentId=${segmentId}, lang=${detectedLanguage}, text="${finalTranscript.substring(0, 50)}..."`);
       state.accumulatedOriginal = '';
       state.accumulatedTranslation = '';
       state.segmentIndex++;
