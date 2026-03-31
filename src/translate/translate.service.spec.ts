@@ -11,11 +11,11 @@ jest.mock('@google-cloud/translate', () => ({
   })),
 }));
 
-jest.mock('@google-cloud/vertexai', () => ({
-  VertexAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: jest.fn().mockReturnValue({
+jest.mock('@google/genai', () => ({
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    models: {
       generateContent: mockGenerateContent,
-    }),
+    },
   })),
 }));
 
@@ -72,11 +72,7 @@ describe('TranslateService', () => {
 
   describe('translate - standard 모드', () => {
     it('Gemini로 번역한다', async () => {
-      mockGenerateContent.mockResolvedValue({
-        response: {
-          candidates: [{ content: { parts: [{ text: 'Hello' }] } }],
-        },
-      });
+      mockGenerateContent.mockResolvedValue({ text: 'Hello' });
 
       const result = await service.translate('안녕하세요', 'ko', 'en', 'standard');
 
@@ -85,9 +81,7 @@ describe('TranslateService', () => {
     });
 
     it('번역 결과가 없으면 빈 문자열을 반환한다', async () => {
-      mockGenerateContent.mockResolvedValue({
-        response: { candidates: [] },
-      });
+      mockGenerateContent.mockResolvedValue({ text: undefined });
 
       const result = await service.translate('안녕하세요', 'ko', 'en', 'standard');
       expect(result.translatedText).toBe('');

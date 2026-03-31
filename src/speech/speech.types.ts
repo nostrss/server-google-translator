@@ -54,6 +54,8 @@ export interface SpeechResultResponseData {
   transcript: string;
   isFinal: boolean;
   timestamp: number;
+  segmentId: string;
+  detectedLanguage?: string;
 }
 
 export interface TranslationResultResponseData {
@@ -61,4 +63,5 @@ export interface TranslationResultResponseData {
   translatedText: string;
   isFinal: boolean;
   timestamp: number;
+  segmentId: string;
 }

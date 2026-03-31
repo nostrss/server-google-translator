@@ -41,6 +41,12 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly wsToSessionId = new Map<WebSocket, string>();
   private readonly ipSessionCount = new Map<string, number>();
+  private readonly sessionTranslateConfig = new Map<string, {
+    sourceCode: string;
+    targetCode: string;
+    translationMode: TranslationMode;
+    translateEnabled: boolean;
+  }>();
 
   constructor(
     private readonly sonioxService: SonioxService,
@@ -74,6 +80,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (sessionId) {
         this.sonioxService.closeSession(sessionId);
         this.wsToSessionId.delete(client);
+        this.sessionTranslateConfig.delete(sessionId);
       }
       // IP 카운터 감소
       const currentCount = this.ipSessionCount.get(ip) ?? 0;
@@ -91,6 +98,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (sessionId) {
       this.sonioxService.closeSession(sessionId);
       this.wsToSessionId.delete(client);
+      this.sessionTranslateConfig.delete(sessionId);
     }
   }
 
@@ -156,19 +164,26 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const sourceCode = extractLangCode(dto.languageCode) || 'ko';
+    const sourceCode = extractLangCode(dto.languageCode);
     const targetCode = extractLangCode(dto.targetLanguageCode);
-    const translateEnabled = !!targetCode && sourceCode !== targetCode;
+    const translateEnabled = !!targetCode && (!sourceCode || sourceCode !== targetCode);
     const translationMode: TranslationMode = dto.translationMode ?? 'standard';
+
+    // stop_speech 시 번역에 필요한 정보를 클로저로 보관
+    this.sessionTranslateConfig.set(sessionId, {
+      sourceCode, targetCode, translationMode, translateEnabled,
+    });
+
+    const languageHints = sourceCode ? [sourceCode] : [];
 
     await this.sonioxService.createSession(
       sessionId,
-      [sourceCode],
+      languageHints,
       translateEnabled ? targetCode : undefined,
-      (transcript, translatedText, isFinal) => {
+      (transcript, translatedText, isFinal, segmentId, detectedLanguage) => {
         this.send<SpeechResultResponseData>(client, {
           event: ServerEvents.SPEECH_RESULT,
-          data: { transcript, isFinal, timestamp: Date.now() },
+          data: { transcript, isFinal, timestamp: Date.now(), segmentId, detectedLanguage: detectedLanguage || undefined },
           success: true,
         });
         if (translateEnabled && translatedText) {
@@ -179,6 +194,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
               translatedText,
               isFinal: false,
               timestamp: Date.now(),
+              segmentId,
             },
             success: true,
           });
@@ -191,19 +207,21 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
           success: true,
         });
       },
-      (finalTranscript) => {
+      (finalTranscript, segmentId, detectedLanguage) => {
         this.send<SpeechResultResponseData>(client, {
           event: ServerEvents.SPEECH_RESULT,
-          data: { transcript: finalTranscript, isFinal: true, timestamp: Date.now() },
+          data: { transcript: finalTranscript, isFinal: true, timestamp: Date.now(), segmentId, detectedLanguage: detectedLanguage || undefined },
           success: true,
         });
         if (translateEnabled && finalTranscript.trim()) {
-          this.translateWithTimeout(finalTranscript, sourceCode, targetCode, translationMode)
+          const effectiveSourceCode = sourceCode || detectedLanguage;
+          if (effectiveSourceCode === targetCode) return;
+          this.translateWithTimeout(finalTranscript, effectiveSourceCode, targetCode, translationMode)
             .then((result) => {
               if (client.readyState === WebSocket.OPEN) {
                 this.send<TranslationResultResponseData>(client, {
                   event: ServerEvents.TRANSLATION_RESULT,
-                  data: { ...result, isFinal: true },
+                  data: { ...result, isFinal: true, segmentId },
                   success: true,
                 });
               }
@@ -262,7 +280,39 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private onStopSpeech(client: WebSocket): void {
     const sessionId = this.wsToSessionId.get(client);
-    if (sessionId) this.sonioxService.closeSession(sessionId);
+    if (sessionId) {
+      const flushed = this.sonioxService.flushAndClose(sessionId);
+      const config = this.sessionTranslateConfig.get(sessionId);
+      this.sessionTranslateConfig.delete(sessionId);
+
+      if (flushed) {
+        this.send<SpeechResultResponseData>(client, {
+          event: ServerEvents.SPEECH_RESULT,
+          data: { transcript: flushed.remaining, isFinal: true, timestamp: Date.now(), segmentId: flushed.segmentId, detectedLanguage: flushed.detectedLanguage || undefined },
+          success: true,
+        });
+
+        if (config?.translateEnabled && flushed.remaining.trim()) {
+          const effectiveSourceCode = config.sourceCode || flushed.detectedLanguage;
+          if (effectiveSourceCode !== config.targetCode) {
+            this.translateWithTimeout(flushed.remaining, effectiveSourceCode, config.targetCode, config.translationMode)
+              .then((result) => {
+                if (client.readyState === WebSocket.OPEN) {
+                  this.send<TranslationResultResponseData>(client, {
+                    event: ServerEvents.TRANSLATION_RESULT,
+                    data: { ...result, isFinal: true, segmentId: flushed.segmentId },
+                    success: true,
+                  });
+                }
+              })
+              .catch((err: unknown) => {
+                this.logger.error('번역 실패:', err);
+                this.sendError(client, ErrorCode.TRANSLATION_ERROR, '번역 처리 중 오류가 발생했습니다.');
+              });
+          }
+        }
+      }
+    }
     this.send(client, {
       event: ServerEvents.SPEECH_STOPPED,
       data: { message: '음성 인식이 종료되었습니다.' },

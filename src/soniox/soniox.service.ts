@@ -12,6 +12,8 @@ export type SonioxResultCallback = (
   transcript: string,
   translatedText: string | undefined,
   isFinal: boolean,
+  segmentId: string,
+  detectedLanguage: string,
 ) => void;
 
 @Injectable()
@@ -37,15 +39,16 @@ export class SonioxService {
     targetLanguage: string | undefined,
     onResult: SonioxResultCallback,
     onReady: () => void,
-    onEndpoint: (finalTranscript: string) => void,
+    onEndpoint: (finalTranscript: string, segmentId: string, detectedLanguage: string) => void,
     onVadTimeout: () => void,
     onSessionTimeout: () => void,
     onError: (error: Error) => void,
   ): Promise<void> {
     const client = this.getClient();
 
-    let accumulatedOriginal = '';
-    let accumulatedTranslation = '';
+    const state = { accumulatedOriginal: '', accumulatedTranslation: '', segmentIndex: 0, detectedLanguage: '' };
+
+    const getSegmentId = () => `${sessionId}-${state.segmentIndex}`;
 
     const session = client.realtime.stt({
       model: 'stt-rt-v4',
@@ -53,6 +56,7 @@ export class SonioxService {
       sample_rate: 16000,
       num_channels: 1,
       language_hints: languageHints,
+      enable_language_identification: true,
       enable_endpoint_detection: true,
       max_endpoint_delay_ms: 1500,
       ...(targetLanguage && {
@@ -69,25 +73,45 @@ export class SonioxService {
       const sonioxSession = this.sessions.get(sessionId);
       if (sonioxSession) sonioxSession.lastTokenAt = Date.now();
 
+      let nonFinalOriginal = '';
+      let nonFinalTranslation = '';
+
       for (const token of result.tokens) {
         if (token.translation_status === 'translation') {
-          accumulatedTranslation += token.text;
+          if (token.is_final) {
+            state.accumulatedTranslation += token.text;
+          } else {
+            nonFinalTranslation += token.text;
+          }
         } else {
-          accumulatedOriginal += token.text;
+          if (token.is_final) {
+            state.accumulatedOriginal += token.text;
+          } else {
+            nonFinalOriginal += token.text;
+          }
+          if ((token as any).language) {
+            state.detectedLanguage = (token as any).language;
+          }
         }
       }
 
+      const currentOriginal = state.accumulatedOriginal + nonFinalOriginal;
+      const currentTranslation = state.accumulatedTranslation + nonFinalTranslation;
       const translatedText = targetLanguage
-        ? accumulatedTranslation || undefined
+        ? currentTranslation || undefined
         : undefined;
-      onResult(accumulatedOriginal, translatedText, false);
+      onResult(currentOriginal, translatedText, false, getSegmentId(), state.detectedLanguage);
     });
 
     session.on('endpoint', () => {
-      const finalTranscript = accumulatedOriginal.trim();
-      onEndpoint(finalTranscript);
-      accumulatedOriginal = '';
-      accumulatedTranslation = '';
+      const finalTranscript = state.accumulatedOriginal.trim();
+      const segmentId = getSegmentId();
+      const detectedLanguage = state.detectedLanguage;
+      state.accumulatedOriginal = '';
+      state.accumulatedTranslation = '';
+      state.segmentIndex++;
+      state.detectedLanguage = '';
+      onEndpoint(finalTranscript, segmentId, detectedLanguage);
     });
 
     session.on('error', (error: Error) => {
@@ -136,6 +160,7 @@ export class SonioxService {
       sessionTimer,
       lastTokenAt: Date.now(),
       isActive: true,
+      state,
     });
 
     onReady();
@@ -147,18 +172,28 @@ export class SonioxService {
     s.session.sendAudio(audioBuffer);
   }
 
+  flushAndClose(sessionId: string): { remaining: string; segmentId: string; detectedLanguage: string } | null {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    const remaining = s.state.accumulatedOriginal.trim();
+    const segmentId = `${sessionId}-${s.state.segmentIndex}`;
+    const detectedLanguage = s.state.detectedLanguage;
+    this.closeSession(sessionId);
+    return remaining ? { remaining, segmentId, detectedLanguage } : null;
+  }
+
   closeSession(sessionId: string): void {
     const s = this.sessions.get(sessionId);
     if (!s) return;
 
     s.isActive = false;
+    this.sessions.delete(sessionId);
+
     if (s.vadTimer) clearInterval(s.vadTimer);
     clearTimeout(s.sessionTimer);
 
     if (s.session.state === 'connected') {
       s.session.close();
     }
-
-    this.sessions.delete(sessionId);
   }
 }

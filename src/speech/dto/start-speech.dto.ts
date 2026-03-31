@@ -4,7 +4,7 @@ import { TranslationMode } from '../../translate/translate.types';
 export class StartSpeechDto {
   @IsString()
   @IsOptional()
-  languageCode?: string = 'ko-KR';
+  languageCode?: string;
 
   @IsString()
   @IsOptional()

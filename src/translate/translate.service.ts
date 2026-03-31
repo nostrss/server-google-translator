@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TranslationServiceClient } from '@google-cloud/translate';
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenAI } from '@google/genai';
 import { TranslationMode, TranslationResult } from './translate.types';
 
 @Injectable()
 export class TranslateService {
   private readonly logger = new Logger(TranslateService.name);
   private translationClient: TranslationServiceClient | null = null;
-  private vertexAI: VertexAI | null = null;
+  private genAI: GoogleGenAI | null = null;
 
   // 1 QPS 큐잉
   private adaptiveQueue: Promise<void> = Promise.resolve();
@@ -65,8 +65,7 @@ export class TranslateService {
     sourceLanguageCode: string,
     targetLanguageCode: string,
   ): Promise<TranslationResult> {
-    const vertexAI = this.getVertexAI();
-    const model = vertexAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const genAI = this.getGenAI();
 
     const safeSrc = sourceLanguageCode.replace(/[^a-zA-Z-]/g, '');
     const safeTgt = targetLanguageCode.replace(/[^a-zA-Z-]/g, '');
@@ -77,9 +76,11 @@ Return only the translated text without any explanation.
 
 Text: ${text}`;
 
-    const result = await model.generateContent(prompt);
-    const translatedText =
-      result.response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    const translatedText = response.text?.trim() ?? '';
 
     return { originalText: text, translatedText, timestamp: Date.now() };
   }
@@ -110,10 +111,11 @@ Text: ${text}`;
     return this.translationClient;
   }
 
-  private getVertexAI(): VertexAI {
-    if (!this.vertexAI) {
+  private getGenAI(): GoogleGenAI {
+    if (!this.genAI) {
       const { projectId, clientEmail, privateKey } = this.getGoogleCredentials();
-      this.vertexAI = new VertexAI({
+      this.genAI = new GoogleGenAI({
+        vertexai: true,
         project: projectId,
         location: 'us-central1',
         googleAuthOptions: {
@@ -124,6 +126,6 @@ Text: ${text}`;
         },
       });
     }
-    return this.vertexAI;
+    return this.genAI;
   }
 }
