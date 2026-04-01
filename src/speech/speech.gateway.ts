@@ -11,6 +11,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { SonioxService } from '../soniox/soniox.service';
 import { TranslateService } from '../translate/translate.service';
+import { SentenceService } from '../sentence/sentence.service';
 import { stripWavHeader, extractLangCode } from '../common/audio.utils';
 import { ErrorCode } from '../common/constants/error-codes';
 import { StartSpeechDto } from './dto/start-speech.dto';
@@ -31,6 +32,8 @@ import { ConfigService } from '@nestjs/config';
 const MAX_AUDIO_CHUNK_BYTES = 64 * 1024;
 const MAX_SESSIONS_PER_IP = 3;
 const TRANSLATION_TIMEOUT_MS = 30_000;
+const SENTENCE_SPLIT_MIN_LENGTH = 20;
+const SENTENCE_SPLIT_DEBOUNCE_MS = 300;
 
 @WebSocketGateway({ path: '/' })
 export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -47,10 +50,12 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     translationMode: TranslationMode;
     translateEnabled: boolean;
   }>();
+  private readonly lastSplitRequestAt = new Map<string, number>();
 
   constructor(
     private readonly sonioxService: SonioxService,
     private readonly translateService: TranslateService,
+    private readonly sentenceService: SentenceService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -81,6 +86,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.sonioxService.closeSession(sessionId);
         this.wsToSessionId.delete(client);
         this.sessionTranslateConfig.delete(sessionId);
+        this.lastSplitRequestAt.delete(sessionId);
       }
       // IP 카운터 감소
       const currentCount = this.ipSessionCount.get(ip) ?? 0;
@@ -99,6 +105,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.sonioxService.closeSession(sessionId);
       this.wsToSessionId.delete(client);
       this.sessionTranslateConfig.delete(sessionId);
+      this.lastSplitRequestAt.delete(sessionId);
     }
   }
 
@@ -199,6 +206,8 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
             success: true,
           });
         }
+        // 문장 분리 체크
+        this.trySplitSentences(client, sessionId, sourceCode, detectedLanguage, targetCode, translationMode, translateEnabled);
       },
       () => {
         this.send(client, {
@@ -318,6 +327,89 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       data: { message: '음성 인식이 종료되었습니다.' },
       success: true,
     });
+  }
+
+  private trySplitSentences(
+    client: WebSocket,
+    sessionId: string,
+    sourceCode: string,
+    detectedLanguage: string,
+    targetCode: string,
+    translationMode: TranslationMode,
+    translateEnabled: boolean,
+  ): void {
+    const accumulatedLength = this.sonioxService.getAccumulatedLength(sessionId);
+    if (accumulatedLength < SENTENCE_SPLIT_MIN_LENGTH) return;
+
+    const now = Date.now();
+    const lastAt = this.lastSplitRequestAt.get(sessionId) ?? 0;
+    if (now - lastAt < SENTENCE_SPLIT_DEBOUNCE_MS) return;
+    this.lastSplitRequestAt.set(sessionId, now);
+
+    const accumulated = this.sonioxService.getAccumulatedOriginal(sessionId);
+    const lang = sourceCode || detectedLanguage;
+
+    this.sentenceService.split(accumulated, lang)
+      .then((sentences) => {
+        if (sentences.length <= 1) return;
+
+        // 마지막 문장은 미완성일 수 있으므로 제외
+        const completeSentences = sentences.slice(0, -1);
+
+        let consumed = 0;
+        for (const sentence of completeSentences) {
+          const segmentId = this.sonioxService.getCurrentSegmentId(sessionId);
+          if (!segmentId) return;
+
+          // accumulated에서 해당 문장의 실제 종료 위치를 찾아 공백까지 포함하여 소비
+          const idx = accumulated.indexOf(sentence, consumed);
+          if (idx === -1) return;
+          const consumeEnd = idx + sentence.length;
+
+          this.sendFinalSentence(client, sentence, segmentId, detectedLanguage, sourceCode, targetCode, translationMode, translateEnabled);
+          this.sonioxService.consumeSentences(sessionId, consumeEnd - consumed);
+          consumed = consumeEnd;
+        }
+      })
+      .catch((err) => {
+        this.logger.debug(`문장 분리 실패: ${err}`);
+      });
+  }
+
+  private sendFinalSentence(
+    client: WebSocket,
+    sentence: string,
+    segmentId: string,
+    detectedLanguage: string,
+    sourceCode: string,
+    targetCode: string,
+    translationMode: TranslationMode,
+    translateEnabled: boolean,
+  ): void {
+    this.send<SpeechResultResponseData>(client, {
+      event: ServerEvents.SPEECH_RESULT,
+      data: { transcript: sentence, isFinal: true, timestamp: Date.now(), segmentId, detectedLanguage: detectedLanguage || undefined },
+      success: true,
+    });
+
+    if (translateEnabled && sentence.trim()) {
+      const effectiveSourceCode = sourceCode || detectedLanguage;
+      if (effectiveSourceCode === targetCode) return;
+      this.translateWithTimeout(sentence, effectiveSourceCode, targetCode, translationMode)
+        .then((result) => {
+          if (client.readyState === WebSocket.OPEN) {
+            this.send<TranslationResultResponseData>(client, {
+              event: ServerEvents.TRANSLATION_RESULT,
+              data: { ...result, isFinal: true, segmentId },
+              success: true,
+            });
+          }
+        })
+        .catch((err: unknown) => {
+          this.logger.error('번역 실패:', err);
+          this.sendError(client, ErrorCode.TRANSLATION_ERROR, '번역 처리 중 오류가 발생했습니다.');
+        });
+    }
   }
 
   private send<T>(client: WebSocket, message: ServerMessage<T>): void {

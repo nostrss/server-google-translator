@@ -15,6 +15,7 @@
   "dependencies": {
     "@google-cloud/translate": "^9.3.0",
     "@google/genai": "^1.47.0",
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.17",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.17",
@@ -24,6 +25,7 @@
     "@nestjs/terminus": "^11.1.1",
     "@nestjs/websockets": "^11.1.17",
     "@soniox/node": "^1.1.2",
+    "axios": "^1.14.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
     "helmet": "^7.0.0",

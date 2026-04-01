@@ -58,7 +58,7 @@ export class SonioxService {
       language_hints: languageHints,
       enable_language_identification: true,
       enable_endpoint_detection: true,
-      max_endpoint_delay_ms: 1500,
+      max_endpoint_delay_ms: 750,
       ...(targetLanguage && {
         translation: {
           type: 'one_way' as const,
@@ -107,7 +107,6 @@ export class SonioxService {
       const finalTranscript = state.accumulatedOriginal.trim();
       const segmentId = getSegmentId();
       const detectedLanguage = state.detectedLanguage;
-      this.logger.log(`[endpoint] segmentId=${segmentId}, lang=${detectedLanguage}, text="${finalTranscript.substring(0, 50)}..."`);
       state.accumulatedOriginal = '';
       state.accumulatedTranslation = '';
       state.segmentIndex++;
@@ -171,6 +170,30 @@ export class SonioxService {
     const s = this.sessions.get(sessionId);
     if (!s?.isActive || s.session.state !== 'connected') return;
     s.session.sendAudio(audioBuffer);
+  }
+
+  consumeSentences(sessionId: string, consumeLength: number): void {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    s.state.accumulatedOriginal = s.state.accumulatedOriginal.substring(consumeLength);
+    s.state.accumulatedTranslation = '';
+    s.state.segmentIndex++;
+  }
+
+  getCurrentSegmentId(sessionId: string): string | null {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    return `${sessionId}-${s.state.segmentIndex}`;
+  }
+
+  getAccumulatedLength(sessionId: string): number {
+    const s = this.sessions.get(sessionId);
+    return s?.state.accumulatedOriginal.length ?? 0;
+  }
+
+  getAccumulatedOriginal(sessionId: string): string {
+    const s = this.sessions.get(sessionId);
+    return s?.state.accumulatedOriginal ?? '';
   }
 
   flushAndClose(sessionId: string): { remaining: string; segmentId: string; detectedLanguage: string } | null {

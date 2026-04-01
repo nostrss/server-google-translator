@@ -12,6 +12,9 @@ export default () => ({
   soniox: {
     apiKey: process.env.SONIOX_API_KEY ?? '',
   },
+  sentenceSplitter: {
+    url: process.env.SENTENCE_SPLITTER_URL ?? 'http://localhost:8001',
+  },
   security: {
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [],
   },
