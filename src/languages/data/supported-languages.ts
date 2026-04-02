@@ -4,7 +4,7 @@ export interface Language {
   nativeName: string;
 }
 
-export const STT_LANGUAGES: Language[] = [
+export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'af', name: 'Afrikaans', nativeName: 'Afrikaans' },
   { code: 'ar', name: 'Arabic', nativeName: 'العربية' },
   { code: 'hy', name: 'Armenian', nativeName: 'Հայերեն' },
