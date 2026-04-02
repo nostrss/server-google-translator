@@ -21,7 +21,6 @@ const OPENROUTER_MODEL_MAP: Record<string, string> = {
   'claude-haiku': 'anthropic/claude-haiku-4.5',
   'claude-sonnet': 'anthropic/claude-sonnet-4.5',
   'gemini-flash': 'google/gemini-2.5-flash',
-  'qwen-3.5-flash': 'qwen/qwen3.5-flash-02-23',
   'mistral-small': 'mistralai/mistral-small',
   'gemini-3-flash': 'google/gemini-3-flash-preview',
   'gpt-5-nano': 'openai/gpt-5-nano',

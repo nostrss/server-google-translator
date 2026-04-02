@@ -6,7 +6,6 @@ export type TranslationMode =
   | 'claude-haiku'
   | 'claude-sonnet'
   | 'gemini-flash'
-  | 'qwen-3.5-flash'
   | 'mistral-small'
   | 'gemini-3-flash'
   | 'gpt-5-nano'
@@ -20,7 +19,6 @@ export const TRANSLATION_MODES: TranslationMode[] = [
   'claude-haiku',
   'claude-sonnet',
   'gemini-flash',
-  'qwen-3.5-flash',
   'mistral-small',
   'gemini-3-flash',
   'gpt-5-nano',

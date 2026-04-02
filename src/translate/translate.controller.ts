@@ -41,14 +41,6 @@ export class TranslateController {
           requiredKeyType: ['openrouterKey'],
         },
         {
-          id: 'qwen-3.5-flash',
-          name: 'Qwen 3.5 Flash',
-          provider: 'qwen',
-          category: 'fast',
-          isFree: false,
-          requiredKeyType: ['openrouterKey'],
-        },
-        {
           id: 'mistral-small',
           name: 'Mistral Small',
           provider: 'mistral',

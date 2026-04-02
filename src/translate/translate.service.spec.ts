@@ -74,7 +74,7 @@ describe('TranslateService', () => {
       const paidModes = [
         'gemini-flash-lite', 'gemini-3-flash', 'gpt-4.1-nano', 'gpt-5-nano', 'gpt-4.1-mini',
         'claude-haiku', 'claude-sonnet',
-        'gemini-flash', 'qwen-3.5-flash',
+        'gemini-flash',
         'mistral-small', 'llama-3.3-70b',
       ] as const;
 
