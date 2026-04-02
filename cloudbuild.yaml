@@ -34,7 +34,8 @@ steps:
       - '--max-instances=10'
       - '--memory=512Mi'
       - '--cpu=1'
-      - '--set-env-vars=NODE_ENV=production'
+      - '--set-env-vars=NODE_ENV=production,SENTENCE_SPLITTER_URL=https://sentence-splitter-588497594238.asia-northeast3.run.app,ALLOWED_ORIGINS=chrome-extension://ellmimobokloigiacmkkojdnppfldbgc'
+      - '--set-secrets=SONIOX_API_KEY=SONIOX_API_KEY:latest,OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest'
 
 images:
   - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/stt-translator/app:$COMMIT_SHA'
