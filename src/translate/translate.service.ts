@@ -1,17 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TranslationServiceClient } from '@google-cloud/translate';
-import { GoogleGenAI } from '@google/genai';
-import { TranslationMode, TranslationResult } from './translate.types';
+import { generateText } from 'ai';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import {
+  TranslationMode,
+  TranslationResult,
+  UserApiKeys,
+  FREE_MODES,
+} from './translate.types';
+import { TranslationApiError } from './translate.error';
+
+const TRANSLATION_PROMPT = (src: string, tgt: string, text: string) =>
+  `You are a professional translator. Translate the following text from ${src} to ${tgt}. Return only the translated text without any explanation.\n\nText: ${text}`;
+
+const OPENROUTER_MODEL_MAP: Record<string, string> = {
+  'gemini-flash-lite': 'google/gemini-2.5-flash-lite',
+  'gemma-3n': 'google/gemma-3n-e4b-it:free',
+  'gpt-4.1-nano': 'openai/gpt-4.1-nano',
+  'gpt-4.1-mini': 'openai/gpt-4.1-mini',
+  'claude-haiku': 'anthropic/claude-haiku-4.5',
+  'claude-sonnet': 'anthropic/claude-sonnet-4.5',
+  'gemini-flash': 'google/gemini-2.5-flash',
+  'qwen-3.5-flash': 'qwen/qwen3.5-flash-02-23',
+  'mistral-small': 'mistralai/mistral-small',
+  'gemini-3-flash': 'google/gemini-3-flash-preview',
+  'gpt-5-nano': 'openai/gpt-5-nano',
+  'llama-3.3-70b': 'meta-llama/llama-3.3-70b-instruct',
+};
 
 @Injectable()
 export class TranslateService {
   private readonly logger = new Logger(TranslateService.name);
-  private translationClient: TranslationServiceClient | null = null;
-  private genAI: GoogleGenAI | null = null;
-
-  // 1 QPS 큐잉
-  private adaptiveQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -20,112 +39,54 @@ export class TranslateService {
     sourceLanguageCode: string,
     targetLanguageCode: string,
     mode: TranslationMode,
+    apiKeys?: UserApiKeys,
   ): Promise<TranslationResult> {
-    if (mode === 'advanced') {
-      return this.enqueueAdaptive(() =>
-        this.translateAdvanced(text, sourceLanguageCode, targetLanguageCode),
+    try {
+      // 무료: gemma-3n → 서버 OpenRouter 키
+      if (mode === 'gemma-3n') {
+        const serverKey = this.configService.get<string>('openrouter.apiKey');
+        if (!serverKey) throw new Error('서버 OpenRouter 키가 설정되지 않았습니다.');
+        return await this.translateWithOpenRouter(
+          OPENROUTER_MODEL_MAP['gemma-3n'],
+          text, sourceLanguageCode, targetLanguageCode, serverKey,
+        );
+      }
+
+      // 유료: 유저 OpenRouter 키
+      if (!apiKeys?.openrouterKey) {
+        throw TranslationApiError.fromProviderError(new Error('API_KEY_REQUIRED'));
+      }
+
+      const openrouterModelId = OPENROUTER_MODEL_MAP[mode];
+      if (!openrouterModelId) {
+        throw new Error(`지원하지 않는 번역 모드: ${mode}`);
+      }
+
+      return await this.translateWithOpenRouter(
+        openrouterModelId,
+        text, sourceLanguageCode, targetLanguageCode, apiKeys.openrouterKey,
       );
+    } catch (err) {
+      if (err instanceof TranslationApiError) throw err;
+      this.logger.error('번역 provider 원본 에러:', err);
+      throw TranslationApiError.fromProviderError(err);
     }
-    return this.translateGemini(text, sourceLanguageCode, targetLanguageCode);
   }
 
-  private enqueueAdaptive<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.adaptiveQueue.then(fn);
-    this.adaptiveQueue = result.then(
-      () => {},
-      () => {},
-    );
-    return result;
-  }
-
-  private async translateAdvanced(
+  private async translateWithOpenRouter(
+    modelId: string,
     text: string,
-    sourceLanguageCode: string,
-    targetLanguageCode: string,
+    src: string,
+    tgt: string,
+    apiKey: string,
   ): Promise<TranslationResult> {
-    const client = this.getTranslationClient();
-    const projectId = this.configService.get<string>('google.projectId');
-    const parent = `projects/${projectId}/locations/us-central1`;
+    const openrouter = createOpenRouter({ apiKey });
 
-    const [response] = await client.translateText({
-      parent,
-      contents: [text],
-      mimeType: 'text/plain',
-      sourceLanguageCode,
-      targetLanguageCode,
-      model: `${parent}/models/general/translation-llm`,
+    const { text: translatedText } = await generateText({
+      model: openrouter(modelId),
+      prompt: TRANSLATION_PROMPT(src, tgt, text),
     });
 
-    const translatedText = response.translations?.[0]?.translatedText ?? '';
-    return { originalText: text, translatedText, timestamp: Date.now() };
-  }
-
-  private async translateGemini(
-    text: string,
-    sourceLanguageCode: string,
-    targetLanguageCode: string,
-  ): Promise<TranslationResult> {
-    const genAI = this.getGenAI();
-
-    const safeSrc = sourceLanguageCode.replace(/[^a-zA-Z-]/g, '');
-    const safeTgt = targetLanguageCode.replace(/[^a-zA-Z-]/g, '');
-
-    const prompt = `You are a professional translator.
-Translate the following text from ${safeSrc} to ${safeTgt}.
-Return only the translated text without any explanation.
-
-Text: ${text}`;
-
-    const response = await genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    const translatedText = response.text?.trim() ?? '';
-
-    return { originalText: text, translatedText, timestamp: Date.now() };
-  }
-
-  private getGoogleCredentials() {
-    const projectId = this.configService.get<string>('google.projectId');
-    const clientEmail = this.configService.get<string>('google.clientEmail');
-    const privateKey = this.configService.get<string>('google.privateKey');
-
-    if (!projectId || !clientEmail || !privateKey) {
-      throw new Error('Google Cloud 인증 정보가 설정되지 않았습니다.');
-    }
-
-    return { projectId, clientEmail, privateKey };
-  }
-
-  private getTranslationClient(): TranslationServiceClient {
-    if (!this.translationClient) {
-      const { projectId, clientEmail, privateKey } = this.getGoogleCredentials();
-      this.translationClient = new TranslationServiceClient({
-        projectId,
-        credentials: {
-          client_email: clientEmail,
-          private_key: privateKey,
-        },
-      });
-    }
-    return this.translationClient;
-  }
-
-  private getGenAI(): GoogleGenAI {
-    if (!this.genAI) {
-      const { projectId, clientEmail, privateKey } = this.getGoogleCredentials();
-      this.genAI = new GoogleGenAI({
-        vertexai: true,
-        project: projectId,
-        location: 'us-central1',
-        googleAuthOptions: {
-          credentials: {
-            client_email: clientEmail,
-            private_key: privateKey,
-          },
-        },
-      });
-    }
-    return this.genAI;
+    return { originalText: text, translatedText: translatedText.trim(), timestamp: Date.now() };
   }
 }

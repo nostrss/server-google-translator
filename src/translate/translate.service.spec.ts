@@ -2,21 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { TranslateService } from './translate.service';
 
-const mockTranslateText = jest.fn();
-const mockGenerateContent = jest.fn();
-
-jest.mock('@google-cloud/translate', () => ({
-  TranslationServiceClient: jest.fn().mockImplementation(() => ({
-    translateText: mockTranslateText,
-  })),
+const mockGenerateText = jest.fn();
+jest.mock('ai', () => ({
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-jest.mock('@google/genai', () => ({
-  GoogleGenAI: jest.fn().mockImplementation(() => ({
-    models: {
-      generateContent: mockGenerateContent,
-    },
-  })),
+jest.mock('@openrouter/ai-sdk-provider', () => ({
+  createOpenRouter: jest.fn().mockReturnValue(
+    (modelId: string) => ({ modelId, provider: 'openrouter' }),
+  ),
 }));
 
 describe('TranslateService', () => {
@@ -31,9 +25,7 @@ describe('TranslateService', () => {
           useValue: {
             get: (key: string) => {
               const map: Record<string, string> = {
-                'google.projectId': 'test-project',
-                'google.clientEmail': 'test@test.iam.gserviceaccount.com',
-                'google.privateKey': '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+                'openrouter.apiKey': 'sk-or-server-test',
               };
               return map[key];
             },
@@ -49,64 +41,48 @@ describe('TranslateService', () => {
     jest.clearAllMocks();
   });
 
-  describe('translate - advanced 모드', () => {
-    it('Cloud Translation LLM 모델로 번역한다', async () => {
-      mockTranslateText.mockResolvedValue([
-        { translations: [{ translatedText: 'Hello' }] },
-      ]);
+  describe('gemma-3n (무료)', () => {
+    it('서버 OpenRouter 키로 번역한다', async () => {
+      mockGenerateText.mockResolvedValue({ text: 'Hello' });
 
-      const result = await service.translate('안녕하세요', 'ko', 'en', 'advanced');
+      const result = await service.translate('안녕하세요', 'ko', 'en', 'gemma-3n');
 
-      expect(mockTranslateText).toHaveBeenCalledWith(
-        expect.objectContaining({
-          contents: ['안녕하세요'],
-          sourceLanguageCode: 'ko',
-          targetLanguageCode: 'en',
-          model: expect.stringContaining('translation-llm'),
-        }),
-      );
+      expect(mockGenerateText).toHaveBeenCalled();
       expect(result.translatedText).toBe('Hello');
-      expect(result.originalText).toBe('안녕하세요');
     });
   });
 
-  describe('translate - standard 모드', () => {
-    it('Gemini로 번역한다', async () => {
-      mockGenerateContent.mockResolvedValue({ text: 'Hello' });
+  describe('유료 모델', () => {
+    it('OpenRouter 키로 번역한다', async () => {
+      mockGenerateText.mockResolvedValue({ text: 'Hello' });
 
-      const result = await service.translate('안녕하세요', 'ko', 'en', 'standard');
+      const result = await service.translate('안녕하세요', 'ko', 'en', 'gpt-4.1-nano', {
+        openrouterKey: 'sk-or-user-test',
+      });
 
-      expect(mockGenerateContent).toHaveBeenCalled();
+      expect(mockGenerateText).toHaveBeenCalled();
       expect(result.translatedText).toBe('Hello');
     });
 
-    it('번역 결과가 없으면 빈 문자열을 반환한다', async () => {
-      mockGenerateContent.mockResolvedValue({ text: undefined });
-
-      const result = await service.translate('안녕하세요', 'ko', 'en', 'standard');
-      expect(result.translatedText).toBe('');
+    it('API 키 없으면 에러를 던진다', async () => {
+      await expect(
+        service.translate('안녕하세요', 'ko', 'en', 'gpt-4.1-nano'),
+      ).rejects.toThrow('API key is required for this model.');
     });
-  });
 
-  describe('advanced 모드 1 QPS 큐잉', () => {
-    it('여러 요청이 순차적으로 처리된다', async () => {
-      const order: number[] = [];
-      mockTranslateText
-        .mockImplementationOnce(async () => {
-          order.push(1);
-          return [{ translations: [{ translatedText: 'A' }] }];
-        })
-        .mockImplementationOnce(async () => {
-          order.push(2);
-          return [{ translations: [{ translatedText: 'B' }] }];
-        });
+    it('모든 유료 모델에서 키 없으면 에러를 던진다', async () => {
+      const paidModes = [
+        'gemini-flash-lite', 'gemini-3-flash', 'gpt-4.1-nano', 'gpt-5-nano', 'gpt-4.1-mini',
+        'claude-haiku', 'claude-sonnet',
+        'gemini-flash', 'qwen-3.5-flash',
+        'mistral-small', 'llama-3.3-70b',
+      ] as const;
 
-      await Promise.all([
-        service.translate('텍스트1', 'ko', 'en', 'advanced'),
-        service.translate('텍스트2', 'ko', 'en', 'advanced'),
-      ]);
-
-      expect(order).toEqual([1, 2]);
+      for (const mode of paidModes) {
+        await expect(
+          service.translate('안녕하세요', 'ko', 'en', mode),
+        ).rejects.toThrow('API key is required for this model.');
+      }
     });
   });
 });
