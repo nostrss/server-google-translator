@@ -1,4 +1,4 @@
-import { TranslationMode } from '../translate/translate.types';
+import { TranslationMode, UserApiKeys } from '../translate/translate.types';
 import { ErrorCode } from '../common/constants/error-codes';
 
 export enum ClientEvents {
@@ -38,6 +38,7 @@ export interface StartSpeechRequestData {
   targetLanguageCode?: string;
   translationMode?: TranslationMode;
   sampleRateHertz?: number;
+  apiKeys?: UserApiKeys;
 }
 
 export interface AudioChunkData {

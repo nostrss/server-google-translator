@@ -26,7 +26,8 @@ import {
   SpeechResultResponseData,
   TranslationResultResponseData,
 } from './speech.types';
-import { TranslationMode } from '../translate/translate.types';
+import { TranslationMode, UserApiKeys, FREE_MODES } from '../translate/translate.types';
+import { TranslationApiError } from '../translate/translate.error';
 import { ConfigService } from '@nestjs/config';
 
 const MAX_AUDIO_CHUNK_BYTES = 64 * 1024;
@@ -49,6 +50,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     targetCode: string;
     translationMode: TranslationMode;
     translateEnabled: boolean;
+    apiKeys?: UserApiKeys;
   }>();
   private readonly lastSplitRequestAt = new Map<string, number>();
 
@@ -126,7 +128,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       case ClientEvents.START_SPEECH:
         this.onStartSpeech(client, message as ClientMessage<StartSpeechRequestData>)
           .catch((err: unknown) => {
-            this.logger.error('start_speech 처리 에러:', err);
+            this.logger.error('start_speech 처리 에러:', err instanceof Error ? err.message : 'unknown');
             this.sendError(client, ErrorCode.INTERNAL_ERROR, '음성 인식 시작 중 오류가 발생했습니다.');
           });
         break;
@@ -174,11 +176,18 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const sourceCode = extractLangCode(dto.languageCode);
     const targetCode = extractLangCode(dto.targetLanguageCode);
     const translateEnabled = !!targetCode && (!sourceCode || sourceCode !== targetCode);
-    const translationMode: TranslationMode = dto.translationMode ?? 'standard';
+    const translationMode: TranslationMode = dto.translationMode ?? 'gemini-flash-lite';
+    const apiKeys = dto.apiKeys;
+
+    // 유료 모델인데 API 키가 없으면 에러
+    if (translateEnabled && !FREE_MODES.includes(translationMode) && !apiKeys) {
+      this.sendError(client, ErrorCode.API_KEY_REQUIRED, '해당 번역 모델을 사용하려면 API 키가 필요합니다.');
+      return;
+    }
 
     // stop_speech 시 번역에 필요한 정보를 클로저로 보관
     this.sessionTranslateConfig.set(sessionId, {
-      sourceCode, targetCode, translationMode, translateEnabled,
+      sourceCode, targetCode, translationMode, translateEnabled, apiKeys,
     });
 
     const languageHints = sourceCode ? [sourceCode] : [];
@@ -207,7 +216,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
           });
         }
         // 문장 분리 체크
-        this.trySplitSentences(client, sessionId, sourceCode, detectedLanguage, targetCode, translationMode, translateEnabled);
+        this.trySplitSentences(client, sessionId, sourceCode, detectedLanguage, targetCode, translationMode, translateEnabled, apiKeys);
       },
       () => {
         this.send(client, {
@@ -225,7 +234,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (translateEnabled && finalTranscript.trim()) {
           const effectiveSourceCode = sourceCode || detectedLanguage;
           if (effectiveSourceCode === targetCode) return;
-          this.translateWithTimeout(finalTranscript, effectiveSourceCode, targetCode, translationMode)
+          this.translateWithTimeout(finalTranscript, effectiveSourceCode, targetCode, translationMode, apiKeys)
             .then((result) => {
               if (client.readyState === WebSocket.OPEN) {
                 this.send<TranslationResultResponseData>(client, {
@@ -235,10 +244,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 });
               }
             })
-            .catch((err: unknown) => {
-              this.logger.error('번역 실패:', err);
-              this.sendError(client, ErrorCode.TRANSLATION_ERROR, '번역 처리 중 오류가 발생했습니다.');
-            });
+            .catch((err: unknown) => this.handleTranslationError(client, err));
         }
       },
       () => {
@@ -261,9 +267,10 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     sourceCode: string,
     targetCode: string,
     mode: TranslationMode,
+    apiKeys?: UserApiKeys,
   ) {
     return Promise.race([
-      this.translateService.translate(text, sourceCode, targetCode, mode),
+      this.translateService.translate(text, sourceCode, targetCode, mode, apiKeys),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('번역 타임아웃')), TRANSLATION_TIMEOUT_MS),
       ),
@@ -304,7 +311,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (config?.translateEnabled && flushed.remaining.trim()) {
           const effectiveSourceCode = config.sourceCode || flushed.detectedLanguage;
           if (effectiveSourceCode !== config.targetCode) {
-            this.translateWithTimeout(flushed.remaining, effectiveSourceCode, config.targetCode, config.translationMode)
+            this.translateWithTimeout(flushed.remaining, effectiveSourceCode, config.targetCode, config.translationMode, config.apiKeys)
               .then((result) => {
                 if (client.readyState === WebSocket.OPEN) {
                   this.send<TranslationResultResponseData>(client, {
@@ -314,10 +321,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
                   });
                 }
               })
-              .catch((err: unknown) => {
-                this.logger.error('번역 실패:', err);
-                this.sendError(client, ErrorCode.TRANSLATION_ERROR, '번역 처리 중 오류가 발생했습니다.');
-              });
+              .catch((err: unknown) => this.handleTranslationError(client, err));
           }
         }
       }
@@ -337,6 +341,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     targetCode: string,
     translationMode: TranslationMode,
     translateEnabled: boolean,
+    apiKeys?: UserApiKeys,
   ): void {
     const accumulatedLength = this.sonioxService.getAccumulatedLength(sessionId);
     if (accumulatedLength < SENTENCE_SPLIT_MIN_LENGTH) return;
@@ -366,7 +371,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
           if (idx === -1) return;
           const consumeEnd = idx + sentence.length;
 
-          this.sendFinalSentence(client, sentence, segmentId, detectedLanguage, sourceCode, targetCode, translationMode, translateEnabled);
+          this.sendFinalSentence(client, sentence, segmentId, detectedLanguage, sourceCode, targetCode, translationMode, translateEnabled, apiKeys);
           this.sonioxService.consumeSentences(sessionId, consumeEnd - consumed);
           consumed = consumeEnd;
         }
@@ -385,6 +390,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     targetCode: string,
     translationMode: TranslationMode,
     translateEnabled: boolean,
+    apiKeys?: UserApiKeys,
   ): void {
     this.send<SpeechResultResponseData>(client, {
       event: ServerEvents.SPEECH_RESULT,
@@ -395,7 +401,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (translateEnabled && sentence.trim()) {
       const effectiveSourceCode = sourceCode || detectedLanguage;
       if (effectiveSourceCode === targetCode) return;
-      this.translateWithTimeout(sentence, effectiveSourceCode, targetCode, translationMode)
+      this.translateWithTimeout(sentence, effectiveSourceCode, targetCode, translationMode, apiKeys)
         .then((result) => {
           if (client.readyState === WebSocket.OPEN) {
             this.send<TranslationResultResponseData>(client, {
@@ -405,10 +411,7 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
             });
           }
         })
-        .catch((err: unknown) => {
-          this.logger.error('번역 실패:', err);
-          this.sendError(client, ErrorCode.TRANSLATION_ERROR, '번역 처리 중 오류가 발생했습니다.');
-        });
+        .catch((err: unknown) => this.handleTranslationError(client, err));
     }
   }
 
@@ -424,5 +427,15 @@ export class SpeechGateway implements OnGatewayConnection, OnGatewayDisconnect {
       success: false,
       error: { code, message },
     });
+  }
+
+  private handleTranslationError(client: WebSocket, err: unknown): void {
+    if (err instanceof TranslationApiError) {
+      this.logger.error(`번역 API 에러 [${err.code}]:`, err.message);
+      this.sendError(client, err.code, err.message);
+    } else {
+      this.logger.error('번역 실패:', err instanceof Error ? err.message : 'unknown');
+      this.sendError(client, ErrorCode.TRANSLATION_ERROR, 'Translation failed. Please try again.');
+    }
   }
 }
