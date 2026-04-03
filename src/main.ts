@@ -7,12 +7,15 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.use(helmet());
-
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [];
+
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }));
+
   app.enableCors({
     origin: allowedOrigins.length > 0 ? allowedOrigins : false,
-    methods: ['GET'],
+    methods: ['GET', 'OPTIONS'],
   });
 
   app.useGlobalPipes(
