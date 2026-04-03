@@ -1,23 +1,53 @@
 {
   "name": "server-google-translator",
   "version": "1.0.0",
-  "description": "Node.js server with TypeScript",
-  "main": "dist/index.js",
+  "description": "NestJS WebSocket server with Soniox STT and Google Translation",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "ts-node src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
-  },
-  "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@types/ws": "^8.18.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.0"
+    "build": "nest build",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@google-cloud/speech": "^7.2.1",
-    "@google-cloud/translate": "^9.3.0",
-    "dotenv": "^17.2.3",
+    "@nestjs/axios": "^4.0.1",
+    "@nestjs/common": "^11.1.17",
+    "@nestjs/config": "^4.0.3",
+    "@nestjs/core": "^11.1.17",
+    "@nestjs/platform-express": "^11.1.17",
+    "@nestjs/platform-ws": "^11.1.17",
+    "@nestjs/schematics": "^11.0.10",
+    "@nestjs/terminus": "^11.1.1",
+    "@nestjs/throttler": "^6.5.0",
+    "@nestjs/websockets": "^11.1.17",
+    "@openrouter/ai-sdk-provider": "^2.3.3",
+    "@soniox/node": "^1.1.2",
+    "ai": "^6.0.143",
+    "axios": "^1.14.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "helmet": "^7.0.0",
+    "joi": "^17.11.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.0.0",
+    "@nestjs/cli": "^11.0.17",
+    "@nestjs/testing": "^11.1.17",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.10.0",
+    "@types/supertest": "^6.0.0",
+    "@types/ws": "^8.18.1",
+    "jest": "^29.5.0",
+    "jest-mock-extended": "^3.0.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
   }
 }
