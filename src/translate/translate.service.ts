@@ -15,7 +15,7 @@ const TRANSLATION_PROMPT = (src: string, tgt: string, text: string) =>
 
 const OPENROUTER_MODEL_MAP: Record<string, string> = {
   'gemini-flash-lite': 'google/gemini-2.5-flash-lite',
-  'gemma-3n': 'google/gemma-3n-e4b-it:free',
+  'gemma-3n': 'google/gemma-3n-e4b-it',
   'gpt-4.1-nano': 'openai/gpt-4.1-nano',
   'gpt-4.1-mini': 'openai/gpt-4.1-mini',
   'claude-haiku': 'anthropic/claude-haiku-4.5',
